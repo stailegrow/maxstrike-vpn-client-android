@@ -25,24 +25,34 @@ for tool in git go python3; do
 done
 
 # gomobile bind компилирует Java-обвязку через javac — ему нужен JDK.
-# На голом маке системной Java обычно нет вообще, зато свой JDK (JBR) уже
-# носит с собой сама Android Studio — просто не выставляет его в PATH
-# Терминала. Ищем его там, если системного java не нашлось.
-if ! command -v java >/dev/null 2>&1; then
+# Ловушка: на голом маке "java" на PATH обычно ЕСТЬ — это системная
+# заглушка /usr/bin/java, которая существует как файл (command -v её
+# находит), но при запуске только показывает диалог "скачай Java с
+# java.com" и падает. Поэтому command -v тут не годится — реального JDK
+# от Android Studio (JBR) она не заменяет, ищем его сами и проверяем
+# рабочим вызовом, а не просто наличием файла.
+JAVA_HOME_CANDIDATE="$(/usr/libexec/java_home 2>/dev/null || true)"
+if [ -z "$JAVA_HOME_CANDIDATE" ] || [ ! -x "${JAVA_HOME_CANDIDATE}/bin/java" ]; then
   for candidate in \
     "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
     "/Applications/Android Studio.app/Contents/jre/Contents/Home"; do
     if [ -x "${candidate}/bin/java" ]; then
-      export JAVA_HOME="$candidate"
-      export PATH="${JAVA_HOME}/bin:${PATH}"
+      JAVA_HOME_CANDIDATE="$candidate"
       break
     fi
   done
 fi
-if ! command -v java >/dev/null 2>&1; then
-  log "Не нашёл Java (javac) — она нужна gomobile для сборки Java-обвязки."
-  log "Обычно идёт вместе с Android Studio; если её нет по стандартному пути,"
-  log "поставь любой JDK 17+ (например, brew install openjdk@17) и запусти снова."
+if [ -n "$JAVA_HOME_CANDIDATE" ]; then
+  export JAVA_HOME="$JAVA_HOME_CANDIDATE"
+  export PATH="${JAVA_HOME}/bin:${PATH}"
+fi
+if ! java -version >/dev/null 2>&1; then
+  log "Не нашёл рабочую Java (javac) — она нужна gomobile для сборки Java-обвязки."
+  log "У macOS на PATH часто есть заглушка /usr/bin/java, которая ничего не"
+  log "запускает, а только предлагает скачать Java с java.com — это не то."
+  log "Обычно рабочий JDK уже есть внутри Android Studio.app; если он не"
+  log "нашёлся по стандартному пути (/Applications/Android Studio.app) —"
+  log "поставь любой JDK 17+, например: brew install openjdk@17, и запусти снова."
   exit 1
 fi
 
