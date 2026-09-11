@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local config (per-machine SDK path — никогда не коммитим)
+local.properties
+
+# Keystores
+*.jks
+*.keystore
