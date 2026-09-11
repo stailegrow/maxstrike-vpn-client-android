@@ -32,6 +32,9 @@ enum class Transport(val rawValue: String) {
     }
 }
 
+// : java.io.Serializable — чтобы конфиг сервера можно было положить в Intent
+// при запуске MaxStrikeVpnService (см. core/ConnectionManager.kt). Все поля —
+// примитивы/строки/списки строк/энамы, так что сериализуется без сюрпризов.
 data class ProxyConfig(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "",
@@ -65,7 +68,7 @@ data class ProxyConfig(
 
     val sourceLink: String? = null,
     val subscriptionID: String? = null,
-) {
+) : java.io.Serializable {
     val identityKey: String
         get() = "${kind.rawValue}|$address|$port|$userID|${transport.rawValue}|${path ?: ""}"
 

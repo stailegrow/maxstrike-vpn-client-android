@@ -35,6 +35,19 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // AAR с собранным Go-рантаймом (libXray.aar) обычно тащит с собой
+    // META-INF-файлы (лицензии и т.п.), которые конфликтуют с такими же
+    // из других зависимостей — без этого сборка падает на дубликатах.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/DEPENDENCIES",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -47,6 +60,15 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.19.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Корутины — нужны сервису VPN (VpnService.Builder.establish(), запуск
+    // ядра и т.п. — всё блокирующее, уходит на Dispatchers.IO).
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+
+    // Нативное ядро Xray-core (gomobile-сборка libXray). Файла может не быть,
+    // пока не запущен Scripts/build-libxray.sh — тогда всё, что обращается к
+    // XrayCoreBridge, не соберётся; это ожидаемо до первого запуска скрипта.
+    implementation(files("libs/libXray.aar"))
 
     // Юнит-тесты (обычный JVM, без эмулятора и телефона).
     testImplementation("junit:junit:4.13.2")

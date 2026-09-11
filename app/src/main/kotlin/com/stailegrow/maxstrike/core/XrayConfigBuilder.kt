@@ -16,6 +16,14 @@ object XrayConfigBuilder {
         val logLevel: String = "warning",
         val logPath: String? = null,
         val routing: RoutingConfig = RoutingPreset.global.make(),
+        // Заполняются только на Android, когда конфиг собирается для
+        // MaxStrikeVpnService: дескриптор TUN-интерфейса из
+        // VpnService.Builder.establish() и его MTU. Когда tunFileDescriptor
+        // не null — единственный inbound становится protocol:"tun", а fd
+        // уезжает в корневой "env" (SetTunFd убрали из libXray, теперь так —
+        // см. README libXray и common/platform/platform.go в Xray-core).
+        val tunFileDescriptor: Int? = null,
+        val tunMtu: Int = 1500,
     )
 
     fun makeJSON(config: ProxyConfig, options: Options = Options()): String =
@@ -35,10 +43,24 @@ object XrayConfigBuilder {
             .put("routing", routing(options.routing))
 
         dns(options.routing)?.let { root.put("dns", it) }
+
+        options.tunFileDescriptor?.let { fd ->
+            // Xray-core читает его через os.Getenv("xray.tun.fd") — ключ
+            // называется буквально так, не переименовывать.
+            root.put("env", JSONObject().put("xray.tun.fd", fd.toString()))
+        }
+
         return root
     }
 
     private fun inbounds(options: Options): JSONArray {
+        options.tunFileDescriptor?.let {
+            // На Android туннель — это сам TUN, отдельный локальный
+            // socks/http тут не нужен: всё устройство и так заворачивается
+            // в этот единственный inbound через VpnService.
+            return JSONArray().put(tunInbound(options.tunMtu))
+        }
+
         val sniffing = JSONObject()
             .put("enabled", true)
             .put("destOverride", JSONArray(listOf("http", "tls", "quic")))
@@ -62,6 +84,17 @@ object XrayConfigBuilder {
 
         return JSONArray().put(socks).put(http)
     }
+
+    // protocol: "tun" — родной inbound Xray-core (proxy/tun), а не
+    // отдельный tun2socks: gVisor-стек Xray сам разбирает IP-пакеты с
+    // готового fd и диспетчерит их через обычный routing() ниже, как любой
+    // другой inbound. Порт/listen ему не нужны (infra/conf/xray.go это
+    // явно пропускает для protocol "tun").
+    private fun tunInbound(mtu: Int): JSONObject =
+        JSONObject()
+            .put("tag", "tun-in")
+            .put("protocol", "tun")
+            .put("settings", JSONObject().put("mtu", mtu))
 
     private fun directOutbound(): JSONObject =
         JSONObject().put("tag", "direct").put("protocol", "freedom")

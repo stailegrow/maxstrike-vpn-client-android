@@ -94,4 +94,30 @@ class XrayConfigBuilderTest {
         val text = XrayConfigBuilder.makeJSON(config)
         JSONObject(text)
     }
+
+    @Test
+    fun `tun inbound and env fd are used when tunFileDescriptor is set`() {
+        val config = LinkParser.parse("vless://u@h:443")
+        val tree = XrayConfigBuilder.makeTree(
+            config,
+            XrayConfigBuilder.Options(tunFileDescriptor = 42, tunMtu = 1400),
+        )
+
+        val inbounds = tree.getJSONArray("inbounds")
+        assertEquals(1, inbounds.length())
+        assertEquals("tun-in", inbounds.getJSONObject(0).getString("tag"))
+        assertEquals("tun", inbounds.getJSONObject(0).getString("protocol"))
+        assertEquals(1400, inbounds.getJSONObject(0).getJSONObject("settings").getInt("mtu"))
+
+        assertEquals("42", tree.getJSONObject("env").getString("xray.tun.fd"))
+    }
+
+    @Test
+    fun `no tunFileDescriptor keeps the socks and http inbounds, no env block`() {
+        val config = LinkParser.parse("vless://u@h:443")
+        val tree = XrayConfigBuilder.makeTree(config, XrayConfigBuilder.Options())
+
+        assertEquals(2, tree.getJSONArray("inbounds").length())
+        assertFalse(tree.has("env"))
+    }
 }

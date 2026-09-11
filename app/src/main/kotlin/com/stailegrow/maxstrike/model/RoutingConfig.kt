@@ -1,5 +1,7 @@
 package com.stailegrow.maxstrike.model
 
+// : java.io.Serializable — тот же повод, что у ProxyConfig: едет в Intent
+// при запуске VPN-сервиса.
 data class RoutingConfig(
     val presetID: String = "global",
 
@@ -21,7 +23,7 @@ data class RoutingConfig(
 
     val geositeURL: String = "",
     val geoipURL: String = "",
-) {
+) : java.io.Serializable {
     val effectiveDirectDomains: List<String>
         get() {
             val manual = directDomains.map { it.trim() }.filter { it.isNotEmpty() }

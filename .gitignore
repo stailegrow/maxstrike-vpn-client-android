@@ -17,3 +17,9 @@ local.properties
 # Keystores
 *.jks
 *.keystore
+
+# Нативная библиотека ядра — собирается Scripts/build-libxray.sh, в
+# репозитории ей не место (как xray/geoip.dat/geosite.dat в macOS-проекте)
+app/libs/*.aar
+app/libs/*.jar
+!app/libs/.gitkeep
