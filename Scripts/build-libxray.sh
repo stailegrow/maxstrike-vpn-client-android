@@ -24,6 +24,28 @@ for tool in git go python3; do
   command -v "$tool" >/dev/null 2>&1 || { log "Не найден '$tool' — установи его и запусти скрипт снова."; exit 1; }
 done
 
+# gomobile bind компилирует Java-обвязку через javac — ему нужен JDK.
+# На голом маке системной Java обычно нет вообще, зато свой JDK (JBR) уже
+# носит с собой сама Android Studio — просто не выставляет его в PATH
+# Терминала. Ищем его там, если системного java не нашлось.
+if ! command -v java >/dev/null 2>&1; then
+  for candidate in \
+    "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+    "/Applications/Android Studio.app/Contents/jre/Contents/Home"; do
+    if [ -x "${candidate}/bin/java" ]; then
+      export JAVA_HOME="$candidate"
+      export PATH="${JAVA_HOME}/bin:${PATH}"
+      break
+    fi
+  done
+fi
+if ! command -v java >/dev/null 2>&1; then
+  log "Не нашёл Java (javac) — она нужна gomobile для сборки Java-обвязки."
+  log "Обычно идёт вместе с Android Studio; если её нет по стандартному пути,"
+  log "поставь любой JDK 17+ (например, brew install openjdk@17) и запусти снова."
+  exit 1
+fi
+
 # gomobile ищет NDK внутри Android SDK. Если ANDROID_HOME не задан в шелле
 # (обычная ситуация для голого Терминала — его выставляет только сама
 # Android Studio), берём путь из local.properties, который она сама создаёт
