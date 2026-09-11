@@ -47,4 +47,10 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.19.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Юнит-тесты (обычный JVM, без эмулятора и телефона).
+    testImplementation("junit:junit:4.13.2")
+    // Android-заглушка org.json в юнит-тестах кидает исключение на любой
+    // вызов — подменяем её настоящей реализацией только для теста.
+    testImplementation("org.json:json:20260814")
 }
