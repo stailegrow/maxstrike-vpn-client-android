@@ -90,11 +90,21 @@ object XrayConfigBuilder {
     // готового fd и диспетчерит их через обычный routing() ниже, как любой
     // другой inbound. Порт/listen ему не нужны (infra/conf/xray.go это
     // явно пропускает для protocol "tun").
+    //
+    // "name" обязателен, хоть на Android и не используется: сам файловый
+    // дескриптор уже готов заранее (VpnService.Builder.establish()), имя
+    // интерфейса Android-версии tun (proxy/tun/tun_android.go) для его
+    // создания не нужно. Но если имя пустое, infra/conf/tun.go само
+    // пытается подобрать свободное через net.Interfaces() — а обычному
+    // Android-приложению список интерфейсов через netlink недоступен,
+    // падает с "netlinkrib: permission denied". Поймано на реальном
+    // запуске на телефоне — значение конкретного имени роли не играет,
+    // лишь бы было непустым.
     private fun tunInbound(mtu: Int): JSONObject =
         JSONObject()
             .put("tag", "tun-in")
             .put("protocol", "tun")
-            .put("settings", JSONObject().put("mtu", mtu))
+            .put("settings", JSONObject().put("mtu", mtu).put("name", "tun0"))
 
     private fun directOutbound(): JSONObject =
         JSONObject().put("tag", "direct").put("protocol", "freedom")

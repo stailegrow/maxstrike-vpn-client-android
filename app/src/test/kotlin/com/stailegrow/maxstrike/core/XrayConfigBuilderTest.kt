@@ -108,6 +108,10 @@ class XrayConfigBuilderTest {
         assertEquals("tun-in", inbounds.getJSONObject(0).getString("tag"))
         assertEquals("tun", inbounds.getJSONObject(0).getString("protocol"))
         assertEquals(1400, inbounds.getJSONObject(0).getJSONObject("settings").getInt("mtu"))
+        // Непустое "name" обязательно — иначе Xray-core сам пытается его
+        // подобрать через net.Interfaces(), а это падает на Android
+        // с permission denied (netlink недоступен обычному приложению).
+        assertTrue(inbounds.getJSONObject(0).getJSONObject("settings").getString("name").isNotEmpty())
 
         assertEquals("42", tree.getJSONObject("env").getString("xray.tun.fd"))
     }
