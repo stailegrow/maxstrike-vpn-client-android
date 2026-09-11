@@ -1,8 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -28,6 +25,8 @@ android {
         }
     }
 
+    // При built-in Kotlin (AGP 9+) jvmTarget для Kotlin берётся отсюда же —
+    // отдельно kotlin.compilerOptions{} задавать не нужно.
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -35,15 +34,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-}
-
-// Начиная с Kotlin 2.0 старый android.kotlinOptions{} — deprecated, в 2.4.x
-// среда Android Studio уже не резолвит его вовсе. Актуальная замена — блок
-// kotlin.compilerOptions{} на верхнем уровне файла, вне android{}.
-kotlin {
-    compilerOptions {
-        jvmTarget = JvmTarget.fromTarget("17")
     }
 }
 
