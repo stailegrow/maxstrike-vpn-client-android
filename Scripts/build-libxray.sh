@@ -48,6 +48,14 @@ if [ -z "$(ls -d "${ANDROID_HOME}"/ndk/*/ 2>/dev/null)" ]; then
 fi
 log "Android SDK: ${ANDROID_HOME}"
 
+# "go install" кладёт gomobile/gobind в GOBIN (или GOPATH/bin, если GOBIN не
+# задан) — это не всегда есть в PATH голого Терминала (Android Studio его
+# туда не прописывает). Добавляем сами, иначе gomobile init падает с
+# "No such file or directory: gomobile", хотя сама установка прошла успешно.
+GOBIN_DIR="$(go env GOBIN)"
+[ -z "$GOBIN_DIR" ] && GOBIN_DIR="$(go env GOPATH)/bin"
+export PATH="${GOBIN_DIR}:${PATH}"
+
 mkdir -p "$CACHE" "$DEST"
 
 if [ -d "${CACHE}/.git" ]; then
