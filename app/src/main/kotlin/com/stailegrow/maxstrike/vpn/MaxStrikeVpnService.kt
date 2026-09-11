@@ -57,7 +57,9 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
     private var tunInterface: ParcelFileDescriptor? = null
     private var coreRunning = false
 
-    override fun protectFd(fd: Int): Boolean = protect(fd)
+    // gomobile переводит Go-тип int в Kotlin как Long (не Int) — сам
+    // адрес protect() в Android-API остаётся Int, поэтому toInt() ниже.
+    override fun protectFd(fd: Long): Boolean = protect(fd.toInt())
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
