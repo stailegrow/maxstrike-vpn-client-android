@@ -1,26 +1,162 @@
 # Max Strike (Android)
 
 Android-клиент VPN на движке [Xray-core](https://github.com/XTLS/Xray-core)
-(VLESS, транспорт XHTTP) — младший брат [macOS-версии Max Strike](https://github.com/stailegrow/maxstrike-vpn-client-macos).
+(VLESS, Reality, XTLS Vision, транспорт XHTTP) — младший брат
+[macOS-версии Max Strike](https://github.com/stailegrow/maxstrike-vpn-client-macos).
 
-**Статус: самое начало.** Сейчас в репозитории только пустой каркас проекта —
-экран запускается, ядро ещё не подключено. План работы и архитектура — в
-отдельном документе вне этого репозитория (как и на macOS-версии, план не
-входит в публичный код).
+[English](#english) · [Сборка из исходников](#сборка-из-исходников)
 
-## Открыть проект
+---
 
-Нужен Android Studio (текущая стабильная версия) на маке или любой другой
-машине. Открыть эту папку как проект — `File → Open`.
+## Что это
 
-Если при первом синке Android Studio пожалуется на отсутствующий
-`gradle-wrapper.jar` — это ожидаемо: бинарник обёртки не коммитился (его
-негде было скачать при генерации каркаса). Android Studio предложит создать
-его сама через `Gradle → Regenerate Wrapper` или синк с её встроенным Gradle —
-соглашайся.
+Max Strike — приложение для Android, которое поднимает VLESS-подключение
+через ядро Xray-core в системном `VpnService`, без root и без
+привилегированного хелпера. Рассчитано на работу с подпиской: ссылка
+добавляется один раз, дальше список узлов живёт сам — добавленные на
+панели появляются в клиенте, удалённые исчезают.
 
-## Стек
+Приложение распространяется APK-файлом напрямую, без Google Play.
 
-- Kotlin + Jetpack Compose, Material 3
-- Xray-core через gomobile-обёртку (`libXray`, MIT, план Б — `AndroidLibXrayLite`, LGPL-3.0)
-- `android.net.VpnService` для туннелирования — без root, без привилегированного хелпера
+## Возможности
+
+**Подключение**
+
+- VLESS поверх TCP с Reality и XTLS Vision, а также транспорт XHTTP
+- маршрутизация трафика: два готовых пресета («глобально» и «обход РФ»)
+  плюс свой список доменов, которые всегда идут напрямую
+- раздельный DNS: домашние имена резолвит местный DNS, внешние — через туннель
+- обход локальной сети: роутер, принтеры и NAS остаются доступны при
+  включённом VPN
+- раздельное туннелирование — выбранные приложения работают в обход VPN
+
+**Серверы и подписки**
+
+- добавление узла ссылкой (по одной или пачкой), подпиской по URL или
+  сканированием QR-кода камерой
+- автообновление списка узлов по подписке, переименование, удаление
+
+**Измерения**
+
+- задержка меряется через туннель — тем же путём, которым пойдёт трафик;
+  опрашивается сама каждые 5 секунд, пока открыта вкладка «Серверы»
+- замер скорости внутри клиента
+
+**Интерфейс**
+
+- несколько цветовых тем, живой фон
+- русский и английский язык, переключается на месте, без перезапуска
+
+## Требования
+
+- Android 7.0 (API 24) или новее
+- для сборки — Android Studio (текущая стабильная версия) и Android NDK
+
+## Установка
+
+Собранный релизный APK ставится обычным сайдлодом: скачать файл и
+разрешить системе «Установить из неизвестных источников» при первом
+запуске установки (диалог покажет сама система).
+
+## Сборка из исходников
+
+```bash
+git clone https://github.com/stailegrow/maxstrike-vpn-client-android.git
+cd maxstrike-vpn-client-android
+./Scripts/build-libxray.sh   # соберёт libXray.aar (нужны git, go, NDK, JDK)
+```
+
+Дальше открыть папку в Android Studio (`File → Open`) и синкнуть проект —
+она сама подтянет остальные зависимости.
+
+Релизная сборка подписывается ключом из `keystore.properties` в корне
+проекта — этот файл и сам keystore не входят в репозиторий (см.
+`.gitignore`), у каждого, кто собирает проект сам, ключ будет свой:
+
+```bash
+keytool -genkeypair -v -keystore keystore/release.keystore \
+  -alias maxstrike -keyalg RSA -keysize 2048 -validity 10000
+```
+
+и рядом `keystore.properties`:
+
+```
+storeFile=keystore/release.keystore
+storePassword=...
+keyAlias=maxstrike
+keyPassword=...
+```
+
+Без этого файла release-сборка просто останется неподписанной — соберётся,
+но не установится без ручной подписи.
+
+## Приватность
+
+Приложение не собирает статистику и никуда не отправляет данные о
+пользователе. Ссылки подписок, настройки и список узлов хранятся только на
+этом телефоне. Единственные сетевые запросы, которые клиент делает от
+себя, — обновление подписки, загрузка баз маршрутизации (geosite/geoip),
+проверка внешнего адреса и сами измерения (задержка, скорость).
+
+## Лицензия
+
+MIT — см. [LICENSE](LICENSE).
+
+Ядро [Xray-core](https://github.com/XTLS/Xray-core) поставляется отдельным
+образом (gomobile-обёртка `libXray`) и распространяется под собственной
+лицензией (MPL-2.0).
+
+---
+
+## English
+
+**Max Strike** is an Android VPN client built on
+[Xray-core](https://github.com/XTLS/Xray-core) — the Android sibling of the
+[macOS Max Strike client](https://github.com/stailegrow/maxstrike-vpn-client-macos).
+It speaks VLESS over TCP with Reality and XTLS Vision, and the XHTTP
+transport, tunnelling through Android's built-in `VpnService` — no root, no
+privileged helper.
+
+It is built around subscriptions: add the link once, and the node list keeps
+itself current. The app is distributed as a plain APK, not through Google
+Play.
+
+**Highlights**
+
+- traffic routing — two ready-made presets (global / bypass-RU) plus your own
+  always-direct domain list; split DNS; local-network bypass; per-app split
+  tunnelling
+- subscriptions by link, in bulk, or by scanning a QR code with the camera
+- latency measured *through* the tunnel — the path traffic actually takes —
+  polled every five seconds while the Servers tab is open
+- in-app speed test
+- several colour themes, a live background, Russian and English interface,
+  switchable on the spot
+
+**Requirements** — Android 7.0 (API 24) or newer. Building needs Android
+Studio and the Android NDK.
+
+**Install** — sideload the release APK and allow "install from unknown
+sources" when the system prompts for it.
+
+**Build**
+
+```bash
+git clone https://github.com/stailegrow/maxstrike-vpn-client-android.git
+cd maxstrike-vpn-client-android
+./Scripts/build-libxray.sh   # builds libXray.aar — needs git, go, NDK, JDK
+```
+
+Then open the folder in Android Studio and let it sync. The release build is
+signed with the key referenced by `keystore.properties` at the project root;
+neither the file nor the keystore ship in the repository (see
+`.gitignore`) — generate your own with `keytool -genkeypair` and point
+`keystore.properties` at it, or the release build will simply come out
+unsigned.
+
+**Privacy** — no telemetry, no accounts, nothing leaves the phone except the
+subscription refresh, routing databases, an external-IP probe, and the
+latency/speed measurements themselves.
+
+**Licence** — MIT. Xray-core ships as a separate gomobile build (`libXray`)
+under its own licence (MPL-2.0).

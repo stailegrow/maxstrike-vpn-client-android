@@ -23,3 +23,6 @@ local.properties
 app/libs/*.aar
 app/libs/*.jar
 !app/libs/.gitkeep
+
+# Ключ подписи релиза и пароли к нему — см. keystore/release.keystore
+keystore.properties
