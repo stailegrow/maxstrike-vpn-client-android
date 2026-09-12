@@ -34,6 +34,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // AAR с собранным Go-рантаймом (libXray.aar) обычно тащит с собой
@@ -69,6 +70,22 @@ dependencies {
     // пока не запущен Scripts/build-libxray.sh — тогда всё, что обращается к
     // XrayCoreBridge, не соберётся; это ожидаемо до первого запуска скрипта.
     implementation(files("libs/libXray.aar"))
+
+    // CameraX — предпросмотр и разбор кадров для сканера QR в диалоге
+    // добавления сервера (core/CameraQRDecoder.kt,
+    // ui/components/QrScannerView.kt). Версии актуальные на сентябрь
+    // 2026 по доступным мне данным; Android Studio подскажет более новый
+    // патч при синке, если появится.
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+
+    // ZXing — чистый декодер QR без Google Play Services: приложение
+    // распространяется APK-релизом на GitHub, без магазина (см.
+    // PLAN-ANDROID.md), заводить ради одной фичи зависимость от GMS
+    // (как потребовал бы ML Kit) ни к чему.
+    implementation("com.google.zxing:core:3.5.3")
 
     // Юнит-тесты (обычный JVM, без эмулятора и телефона).
     testImplementation("junit:junit:4.13.2")

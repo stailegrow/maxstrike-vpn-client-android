@@ -124,4 +124,52 @@ class XrayConfigBuilderTest {
         assertEquals(2, tree.getJSONArray("inbounds").length())
         assertFalse(tree.has("env"))
     }
+
+    @Test
+    fun `geoAssetsDir alone still produces an env block with the asset key`() {
+        val config = LinkParser.parse("vless://u@h:443")
+        val tree = XrayConfigBuilder.makeTree(
+            config,
+            XrayConfigBuilder.Options(geoAssetsDir = "/data/user/0/com.stailegrow.maxstrike/files/geo"),
+        )
+
+        assertTrue(tree.has("env"))
+        assertEquals(
+            "/data/user/0/com.stailegrow.maxstrike/files/geo",
+            tree.getJSONObject("env").getString("xray.location.asset"),
+        )
+        // Без tunFileDescriptor локальные inbound'ы (socks/http) никуда не делись.
+        assertEquals(2, tree.getJSONArray("inbounds").length())
+    }
+
+    @Test
+    fun `tun fd and geoAssetsDir coexist in the same env block`() {
+        val config = LinkParser.parse("vless://u@h:443")
+        val tree = XrayConfigBuilder.makeTree(
+            config,
+            XrayConfigBuilder.Options(tunFileDescriptor = 7, geoAssetsDir = "/tmp/geo"),
+        )
+
+        val env = tree.getJSONObject("env")
+        assertEquals("7", env.getString("xray.tun.fd"))
+        assertEquals("/tmp/geo", env.getString("xray.location.asset"))
+    }
+
+    @Test
+    fun `bypass-RU preset routing rules reference the expected geosite and geoip categories`() {
+        val routing = com.stailegrow.maxstrike.model.RoutingPreset.bypassRU.make()
+
+        assertTrue(routing.needsGeoAssets)
+        assertTrue(routing.directSites.contains("geosite:category-ru"))
+        assertTrue(routing.directIP.contains("geoip:private"))
+
+        val rules = XrayConfigBuilder.routing(routing).getJSONArray("rules")
+        assertTrue(rules.length() > 0)
+    }
+
+    @Test
+    fun `global preset never needs geo assets`() {
+        val routing = com.stailegrow.maxstrike.model.RoutingPreset.global.make()
+        assertFalse(routing.needsGeoAssets)
+    }
 }

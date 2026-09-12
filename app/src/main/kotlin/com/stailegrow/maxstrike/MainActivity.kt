@@ -1,52 +1,63 @@
 package com.stailegrow.maxstrike
 
 import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
-import android.net.VpnService
 import com.stailegrow.maxstrike.core.ConnectionManager
 import com.stailegrow.maxstrike.core.ConnectionState
-import com.stailegrow.maxstrike.core.LinkParser
+import com.stailegrow.maxstrike.core.GeoAssets
+import com.stailegrow.maxstrike.core.L
+import com.stailegrow.maxstrike.core.RoutingStore
+import com.stailegrow.maxstrike.core.ServerStore
+import com.stailegrow.maxstrike.core.SettingsStore
+import com.stailegrow.maxstrike.core.ThemeStore
 import com.stailegrow.maxstrike.model.ProxyConfig
-import com.stailegrow.maxstrike.ui.theme.HudTextSecondary
+import com.stailegrow.maxstrike.ui.HomeScreen
+import com.stailegrow.maxstrike.ui.ServersScreen
+import com.stailegrow.maxstrike.ui.SettingsScreen
+import com.stailegrow.maxstrike.ui.components.AddServerDialog
+import com.stailegrow.maxstrike.ui.components.AppBackground
+import com.stailegrow.maxstrike.ui.components.AppTab
+import com.stailegrow.maxstrike.ui.components.AppTopBar
+import com.stailegrow.maxstrike.ui.components.BottomNav
 import com.stailegrow.maxstrike.ui.theme.MaxStrikeTheme
 
-// Этап 1 плана: вставил ссылку, разобрал, нажал "Подключить" — дальше
-// ConnectionManager просит систему поднять MaxStrikeVpnService (VpnService +
-// ядро Xray через XrayCoreBridge, см. core/ и vpn/). Экран, как и на macOS,
-// знает только про ConnectionManager.state/activeServer/externalIP.
+// Интерфейс переведён на три вкладки (Главная/Сервера/Настройки) + общая
+// шапка (AppTopBar) — то, что раньше было одним экраном с вордмарком,
+// пикерами темы/роутинга и списком серверов вперемешку, теперь разложено
+// ровно так, как на присланном пользователем макете мака: роутинг и темы
+// переехали в "Настройки" (SettingsScreen.kt), быстрое добавление — из
+// текстового поля на экране в диалог по кнопке "+" (AddServerDialog),
+// список серверов общий для "Главной" и "Сервера" (ui/components/Cards.kt
+// и ServerRow.kt), а "Сервера" дополнительно показывает историю пинга
+// (LatencyCard). AppRoot ниже — единственное место, которое знает про все
+// три экрана сразу; сами экраны друг про друга не знают.
 class MainActivity : ComponentActivity() {
 
     // Системный диалог "разрешить VPN" можно показать только через Activity,
@@ -59,12 +70,29 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         val server = pendingServer
         pendingServer = null
-        if (server != null && result.resultCode == RESULT_OK) {
-            ConnectionManager.connect(this, server)
+        if (server != null) {
+            if (result.resultCode == RESULT_OK) {
+                ConnectionManager.connect(this, server)
+            } else {
+                // Пользователь отклонил системный диалог "разрешить VPN" —
+                // раньше это молча ничего не делало и кнопка просто гасла,
+                // как будто тапа не было; теперь показываем то же состояние
+                // Failed, что и explicit-проверка в ConnectionManager.connect().
+                ConnectionManager.reportFailed(L.t("Нет разрешения на VPN.", "No VPN permission."))
+            }
         }
     }
 
-    private fun requestConnect(server: ProxyConfig) {
+    // Единственная точка входа для тапа по ConnectSlab: если уже подключены
+    // (или подключаемся) именно к этому серверу — отключаем, иначе просим
+    // разрешение (если ещё не выдано) и подключаемся.
+    private fun requestToggle(server: ProxyConfig) {
+        val alreadyThisServer = ConnectionManager.activeServer.value?.id == server.id &&
+            (ConnectionManager.state.value.isConnected || ConnectionManager.state.value.isBusy)
+        if (alreadyThisServer) {
+            ConnectionManager.disconnect(this)
+            return
+        }
         val prepareIntent: Intent? = VpnService.prepare(this)
         if (prepareIntent != null) {
             pendingServer = server
@@ -76,6 +104,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ServerStore.init(applicationContext)
+        ServerStore.startAutoRefresh()
+        ThemeStore.init(applicationContext)
+        RoutingStore.init(applicationContext)
+        GeoAssets.init(applicationContext)
+        SettingsStore.init(applicationContext)
+
+        // На 120-герцовых экранах (например, Samsung S25) окно по умолчанию
+        // не всегда просит максимальную частоту обновления у системы — явно
+        // заявляем её, иначе часть анимаций (живой фон, ConnectSlab)
+        // визуально упирается в 60 Гц даже когда сам экран умеет больше.
+        // preferredRefreshRate — поле WindowManager.LayoutParams, доступно
+        // с API 21, так что дополнительная проверка версии не нужна.
+        window.attributes = window.attributes.apply {
+            preferredRefreshRate = Float.MAX_VALUE
+        }
+
         enableEdgeToEdge()
         setContent {
             MaxStrikeTheme {
@@ -83,137 +128,71 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    HomeScreen(onConnect = ::requestConnect)
+                    AppRoot(onToggle = ::requestToggle)
                 }
             }
         }
     }
 }
 
+// LocalOverscrollFactory (отключение "резинки" при скролле, см. комментарий
+// ниже) в некоторых версиях Compose Foundation помечен экспериментальным —
+// @OptIn на всякий случай, лишним он не будет, даже если аннотация сейчас
+// и не обязательна для этого конкретного API.
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HomeScreen(onConnect: (ProxyConfig) -> Unit) {
-    var linkText by rememberSaveable { mutableStateOf("") }
-    var result by remember { mutableStateOf<LinkParser.ParseResult?>(null) }
+private fun AppRoot(onToggle: (ProxyConfig) -> Unit) {
+    var tab by remember { mutableStateOf(AppTab.HOME) }
+    var addDialogOpen by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-    ) {
-        Wordmark()
-        StatusLine()
-
-        OutlinedTextField(
-            value = linkText,
-            onValueChange = { linkText = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 24.dp),
-            label = { Text("vless://…") },
-            placeholder = { Text("Вставь одну или несколько ссылок, по одной на строку") },
-            minLines = 3,
-        )
-
-        Button(
-            onClick = { result = LinkParser.parseMany(linkText) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-        ) {
-            Text("Разобрать")
-        }
-
-        result?.let { ParseResultView(it, onConnect) }
-    }
-}
-
-@Composable
-private fun StatusLine() {
-    val context = LocalContext.current
     val state by ConnectionManager.state.collectAsState()
-    val activeServer by ConnectionManager.activeServer.collectAsState()
-    val externalIP by ConnectionManager.externalIP.collectAsState()
+    val connected = state is ConnectionState.Connected
+    val liveBackground by SettingsStore.liveBackground.collectAsState()
+    // L.t() читает L.current обычным полем, а не через State — Compose
+    // сам по себе не узнает о смене языка. key(language) вокруг всего
+    // дерева форсирует его пересборку целиком при смене — тот же приём,
+    // что .id(settings.language) на маке (App.swift).
+    val language by SettingsStore.language.collectAsState()
 
-    val text = when (val s = state) {
-        is ConnectionState.Disconnected -> "Отключено"
-        is ConnectionState.Connecting -> "Подключаюсь к ${activeServer?.displayName ?: "серверу"}…"
-        is ConnectionState.Connected -> "Подключено · ${externalIP ?: "…"}"
-        is ConnectionState.Failed -> "Ошибка: ${s.message}"
-    }
-    val color = when (state) {
-        is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
-        is ConnectionState.Failed -> MaterialTheme.colorScheme.error
-        else -> HudTextSecondary
-    }
+    // Растягивающийся оверскролл ("резинка" на краях списка) в Compose
+    // включён по умолчанию на КАЖДОМ скролле и рендерится всё время, пока
+    // палец на экране двигает список — даже если список короче экрана и
+    // фактически никуда не прокручивается (ровно наш случай на
+    // "Главной"/"Сервера" с парой серверов). Это отдельный, не связанный
+    // с живым фоном источник подтормаживания при свайпах, и он одинаков на
+    // всех трёх вкладках — что и совпадает с тем, что тормозит везде,
+    // включая "Настройки". Отключаем эффект для всего приложения разом;
+    // единственное, что меняется внешне — исчезает сама "резинка" на
+    // краях списка, к скорости и плавности самого скролла это отношения
+    // не имеет.
+    key(language) {
+    CompositionLocalProvider(LocalOverscrollFactory provides null) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AppBackground(animated = liveBackground, modifier = Modifier.fillMaxSize())
 
-    Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-        Text(text = text, color = color, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        if (state.isConnected || state.isBusy) {
-            OutlinedButton(onClick = { ConnectionManager.disconnect(context) }) {
-                Text("Отключить")
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(horizontal = 20.dp),
+            ) {
+                AppTopBar(connected = connected, onAddClick = { addDialogOpen = true })
+
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    when (tab) {
+                        AppTab.HOME -> HomeScreen(onToggle = onToggle, modifier = Modifier.fillMaxSize())
+                        AppTab.SERVERS -> ServersScreen(modifier = Modifier.fillMaxSize())
+                        AppTab.SETTINGS -> SettingsScreen(modifier = Modifier.fillMaxSize())
+                    }
+                }
+
+                BottomNav(selected = tab, onSelect = { tab = it })
             }
         }
-    }
-}
 
-@Composable
-private fun ParseResultView(result: LinkParser.ParseResult, onConnect: (ProxyConfig) -> Unit) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 20.dp),
-        contentPadding = PaddingValues(bottom = 24.dp),
-    ) {
-        items(result.configs) { config -> ServerRow(config, onConnect) }
-        items(result.errors) { message ->
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(vertical = 6.dp),
-            )
+        if (addDialogOpen) {
+            AddServerDialog(onDismiss = { addDialogOpen = false })
         }
     }
-}
-
-@Composable
-private fun ServerRow(config: ProxyConfig, onConnect: (ProxyConfig) -> Unit) {
-    val state by ConnectionManager.state.collectAsState()
-    val activeServer by ConnectionManager.activeServer.collectAsState()
-    val isThisServer = activeServer?.id == config.id
-
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = config.displayName, color = MaterialTheme.colorScheme.onBackground, fontSize = 16.sp)
-            Text(text = config.summary, color = HudTextSecondary, fontSize = 12.sp)
-        }
-        Button(
-            onClick = { onConnect(config) },
-            enabled = !(isThisServer && state.isBusy),
-        ) {
-            Text(if (isThisServer && state.isConnected) "Переподключить" else "Подключить")
-        }
-    }
-}
-
-@Composable
-private fun Wordmark() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "MAX STRIKE",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.15.em,
-        )
-        Text(
-            text = "SECURE TUNNEL",
-            color = HudTextSecondary,
-            fontSize = 12.sp,
-            letterSpacing = 0.3.em,
-        )
     }
 }

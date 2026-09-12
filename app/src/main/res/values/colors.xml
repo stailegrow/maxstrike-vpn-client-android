@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Фон адаптивной иконки — тот же тёмный, что и у исходной иконки на
+         маке (см. Palette.acid: "исходная иконка — кислотно-жёлтый по
+         чёрному"). Сам рисунок — в drawable-xxxhdpi/ic_launcher_foreground.png,
+         извлечён из настоящего Resources/AppIcon.icns мак-проекта. -->
+    <color name="ic_launcher_background">#0A0A09</color>
+</resources>

@@ -5,13 +5,17 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.stailegrow.maxstrike.MainActivity
 import com.stailegrow.maxstrike.core.ConnectionManager
+import com.stailegrow.maxstrike.core.L
+import com.stailegrow.maxstrike.core.GeoAssets
 import com.stailegrow.maxstrike.core.IPChecker
+import com.stailegrow.maxstrike.core.SettingsStore
 import com.stailegrow.maxstrike.core.XrayConfigBuilder
 import com.stailegrow.maxstrike.core.XrayCoreBridge
 import com.stailegrow.maxstrike.model.ProxyConfig
@@ -53,7 +57,15 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         private const val FALLBACK_DNS_IP = "1.1.1.1"
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + Job())
+    // limitedParallelism(1): CONNECT и DISCONNECT (и onRevoke) кладутся сюда
+    // независимыми launch{} — на обычном Dispatchers.IO это пул потоков, и
+    // ничего не гарантирует, что стартующий startTunnel() и параллельно
+    // пришедший stopTunnel() не выполнятся на разных потоках одновременно
+    // (гонка за tunInterface/coreRunning, самый частый триггер — быстрый
+    // повторный тап или переключение сервера во время подключения).
+    // limitedParallelism(1) превращает Dispatchers.IO в очередь: следующий
+    // launch не начнётся, пока не закончится (или не приостановится) текущий.
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(1) + Job())
     private var tunInterface: ParcelFileDescriptor? = null
     private var coreRunning = false
 
@@ -69,7 +81,7 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
                 @Suppress("DEPRECATION")
                 val routing = intent.getSerializableExtra(EXTRA_ROUTING) as? RoutingConfig
                 if (server == null || routing == null) {
-                    ConnectionManager.reportFailed("Сервис получил пустой конфиг — это баг, а не сеть.")
+                    ConnectionManager.reportFailed(L.t("Сервис получил пустой конфиг — это баг, а не сеть.", "The service received an empty config — that's a bug, not a network issue."))
                     stopSelf()
                 } else {
                     scope.launch { startTunnel(server, routing) }
@@ -83,28 +95,63 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
 
     private suspend fun startTunnel(server: ProxyConfig, routing: RoutingConfig) {
         try {
+            // Переключение сервера "на лету": ACTION_CONNECT может прийти, пока
+            // предыдущий туннель ещё поднят (тот же путь тапа, что и обычное
+            // подключение, — UI не шлёт ACTION_DISCONNECT перед сменой сервера).
+            // Без явного teardown() тут builder.establish() ниже тихо подменил
+            // бы TUN у системы, а старый ParcelFileDescriptor и старое ядро
+            // остались бы висеть — утечка дескриптора и два работающих ядра
+            // разом. teardown() безопасен и когда ничего не поднято (coreRunning
+            // == false, tunInterface == null) — тогда это просто no-op.
+            teardown()
+
             val dnsIP = plainIPv4(routing.remoteDNS) ?: FALLBACK_DNS_IP
 
-            val iface = Builder()
+            val builder = Builder()
                 .setSession("Max Strike")
                 .addAddress(TUN_ADDRESS, TUN_PREFIX)
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer(dnsIP)
                 .setMtu(TUN_MTU)
-                .establish()
+
+            // Раздельное туннелирование: приложения из списка исключений не
+            // видят TUN вообще, их трафик идёт мимо VPN напрямую. Если
+            // пакет успели удалить с телефона — addDisallowedApplication
+            // кидает NameNotFoundException, просто пропускаем его и не
+            // валим всё подключение из-за одного отсутствующего пакета.
+            for (pkg in SettingsStore.excludedApps.value) {
+                try {
+                    builder.addDisallowedApplication(pkg)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    // пропускаем — приложения уже нет на устройстве
+                }
+            }
+
+            val iface = builder.establish()
                 ?: throw IllegalStateException(
-                    "Android не выдал TUN-интерфейс (establish() вернул null) — " +
-                        "разрешение на VPN не выдано или его отозвали.",
+                    L.t(
+                        "Android не выдал TUN-интерфейс (establish() вернул null) — " +
+                            "разрешение на VPN не выдано или его отозвали.",
+                        "Android did not provide a TUN interface (establish() returned null) — " +
+                            "the VPN permission was not granted or was revoked.",
+                    ),
                 )
             tunInterface = iface
 
             XrayCoreBridge.registerDialerController(this)
             XrayCoreBridge.setDNS(this, "$dnsIP:53")
 
+            // GeoAssets.init() зовёт MainActivity при старте приложения —
+            // сервис живёт в том же процессе, поэтому dirPath() тут уже
+            // готов (либо null, если этап 4 ни разу не подключался — тогда
+            // просто нет geosite:/geoip: правил, которым он был бы нужен:
+            // ConnectionManager.resolveRouting() уже проверил это раньше,
+            // чем стартовал сервис).
             val options = XrayConfigBuilder.Options(
                 routing = routing,
                 tunFileDescriptor = iface.fd,
                 tunMtu = TUN_MTU,
+                geoAssetsDir = GeoAssets.dirPath(),
             )
             XrayCoreBridge.runXray(XrayConfigBuilder.makeJSON(server, options))
             coreRunning = true
@@ -114,7 +161,7 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
             // macOS-версии, см. Core/ConnectionManager.swift).
             delay(700)
             if (!XrayCoreBridge.isRunning()) {
-                throw IllegalStateException("Ядро запустилось и сразу остановилось — конфиг или сервер невалидны.")
+                throw IllegalStateException(L.t("Ядро запустилось и сразу остановилось — конфиг или сервер невалидны.", "The core started and immediately stopped — the config or server is invalid."))
             }
 
             // Наш процесс не исключён из VPN-маршрута, так что этот запрос
@@ -122,14 +169,17 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
             // а не просто "ядро запущено".
             val ip = IPChecker.externalIPBlocking()
                 ?: throw IllegalStateException(
-                    "Ядро запустилось, но трафик через туннель не идёт — внешний IP получить не удалось.",
+                    L.t(
+                        "Ядро запустилось, но трафик через туннель не идёт — внешний IP получить не удалось.",
+                        "The core started, but no traffic is going through the tunnel — the external IP could not be obtained.",
+                    ),
                 )
 
             startForeground(NOTIFICATION_ID, buildNotification(server))
             ConnectionManager.reportConnected(ip)
         } catch (e: Exception) {
             teardown()
-            ConnectionManager.reportFailed(e.message ?: "Не удалось поднять туннель.")
+            ConnectionManager.reportFailed(e.message ?: L.t("Не удалось поднять туннель.", "Could not bring up the tunnel."))
             stopSelf()
         }
     }
@@ -179,11 +229,21 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
+        // Кнопка "Отключить" прямо в уведомлении — обычный запрос сервису
+        // с ACTION_DISCONNECT, тот же путь, что и из интерфейса
+        // (ConnectionManager.disconnect()), просто минуя Activity.
+        val disconnect = PendingIntent.getService(
+            this,
+            0,
+            Intent(this, MaxStrikeVpnService::class.java).apply { action = ACTION_DISCONNECT },
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Max Strike")
-            .setContentText("Подключено: ${server.displayName}")
+            .setContentText(L.t("Подключено: ${server.displayName}", "Connected: ${server.displayName}"))
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(openApp)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, L.t("Отключить", "Disconnect"), disconnect)
             .setOngoing(true)
             .build()
     }

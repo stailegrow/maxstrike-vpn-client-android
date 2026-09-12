@@ -7,9 +7,28 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Своя иконка приезжает на этапе дизайна (см. PLAN-ANDROID.md, этап 5) -->
+    <!-- Сканер QR в диалоге добавления сервера (ui/components/QrScannerView.kt).
+         Камера не обязательна для самого приложения — без неё остаются
+         рабочими режимы "Ссылки" и "Подписка", поэтому required="false". -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- Нужно на Android 11+ (API 30+), чтобы queryIntentActivities в
+         AppPickerDialog вообще видел чужие приложения для раздельного
+         туннелирования — без этого блока список окажется пустым. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <!-- Иконка — из настоящего Resources/AppIcon.icns мак-проекта (adaptive + legacy, см. res/mipmap-*, res/drawable-xxxhdpi) -->
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 

@@ -24,6 +24,12 @@ object XrayConfigBuilder {
         // см. README libXray и common/platform/platform.go в Xray-core).
         val tunFileDescriptor: Int? = null,
         val tunMtu: Int = 1500,
+        // Этап 4: папка с geosite.dat/geoip.dat (см. core/GeoAssets.kt).
+        // Тоже уезжает в "env" — так Xray-core узнаёт, где искать базы для
+        // правил geosite:/geoip:, не имея собственного окружения процесса
+        // (ядро линкуется в приложение, а не запускается отдельным
+        // бинарником, как на маке).
+        val geoAssetsDir: String? = null,
     )
 
     fun makeJSON(config: ProxyConfig, options: Options = Options()): String =
@@ -44,11 +50,23 @@ object XrayConfigBuilder {
 
         dns(options.routing)?.let { root.put("dns", it) }
 
+        val env = JSONObject()
         options.tunFileDescriptor?.let { fd ->
             // Xray-core читает его через os.Getenv("xray.tun.fd") — ключ
             // называется буквально так, не переименовывать.
-            root.put("env", JSONObject().put("xray.tun.fd", fd.toString()))
+            env.put("xray.tun.fd", fd.toString())
         }
+        options.geoAssetsDir?.let { dir ->
+            // Тот же механизм: infra/conf/xray.go применяет весь "env" через
+            // os.Setenv() до того, как строит routing/dns, так что
+            // geosite:/geoip: правила уже видят папку с базами. В
+            // Xray-core это platform.AssetLocation = "xray.location.asset"
+            // (common/platform/platform.go) — macOS-версия использует ту
+            // же переменную, только по-настоящему в окружении процесса
+            // (там ядро — отдельный бинарник, см. Core/XrayProcess.swift).
+            env.put("xray.location.asset", dir)
+        }
+        if (env.length() > 0) root.put("env", env)
 
         return root
     }
