@@ -49,6 +49,13 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
 
         private const val TUN_ADDRESS = "10.10.14.1"
         private const val TUN_PREFIX = 30
+        // Без адреса/маршрута IPv6 весь IPv6-трафик уходит мимо туннеля
+        // напрямую через провайдера — на IPv6-сетях (почти все 4G/5G) это
+        // реальная утечка настоящего адреса и трафика в обход VPN. ULA-адрес
+        // (RFC 4193) — тот же принцип, что TUN_ADDRESS для IPv4: маршрутизируем
+        // только внутри собственного TUN, наружу он никуда не резолвится.
+        private const val TUN_ADDRESS_V6 = "fd00:1:fd00:1::1"
+        private const val TUN_PREFIX_V6 = 64
         private const val TUN_MTU = 1500
         // Публичный резолвер по умолчанию для системного маршрута DNS —
         // не то же самое, что options.routing.remoteDNS (тот может быть
@@ -95,6 +102,14 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
 
     private suspend fun startTunnel(server: ProxyConfig, routing: RoutingConfig) {
         try {
+            // startForeground() — самым первым делом, ещё до establish()/ядра/сетевой
+            // проверки IP: те шаги могут суммарно занять несколько секунд на медленной
+            // сети, а пока startForeground() не вызван, сервис не защищён системой как
+            // foreground и рискует быть убит агрессивной прошивкой в этом окне.
+            // Уведомление обновится на "подключено" ниже, как только тоннель реально
+            // заработает (внешний IP получен).
+            startForeground(NOTIFICATION_ID, buildNotification(server, connecting = true))
+
             // Переключение сервера "на лету": ACTION_CONNECT может прийти, пока
             // предыдущий туннель ещё поднят (тот же путь тапа, что и обычное
             // подключение, — UI не шлёт ACTION_DISCONNECT перед сменой сервера).
@@ -111,6 +126,8 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
                 .setSession("Max Strike")
                 .addAddress(TUN_ADDRESS, TUN_PREFIX)
                 .addRoute("0.0.0.0", 0)
+                .addAddress(TUN_ADDRESS_V6, TUN_PREFIX_V6)
+                .addRoute("::", 0)
                 .addDnsServer(dnsIP)
                 .setMtu(TUN_MTU)
 
@@ -175,7 +192,7 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
                     ),
                 )
 
-            startForeground(NOTIFICATION_ID, buildNotification(server))
+            startForeground(NOTIFICATION_ID, buildNotification(server, connecting = false))
             ConnectionManager.reportConnected(ip)
         } catch (e: Exception) {
             teardown()
@@ -198,8 +215,9 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         }
         runCatching { tunInterface?.close() }
         tunInterface = null
-        @Suppress("DEPRECATION")
-        stopForeground(true)
+        // minSdk 24 уже покрывает STOP_FOREGROUND_REMOVE (добавлен в API 24) —
+        // старый stopForeground(true) не нужен, версии ниже 24 не поддерживаются.
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     override fun onDestroy() {
@@ -219,7 +237,7 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         return value.takeIf { ipv4.matches(it) }
     }
 
-    private fun buildNotification(server: ProxyConfig): Notification {
+    private fun buildNotification(server: ProxyConfig, connecting: Boolean): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(
@@ -240,7 +258,13 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         )
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Max Strike")
-            .setContentText(L.t("Подключено: ${server.displayName}", "Connected: ${server.displayName}"))
+            .setContentText(
+                if (connecting) {
+                    L.t("Подключение: ${server.displayName}…", "Connecting: ${server.displayName}…")
+                } else {
+                    L.t("Подключено: ${server.displayName}", "Connected: ${server.displayName}")
+                },
+            )
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(openApp)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, L.t("Отключить", "Disconnect"), disconnect)

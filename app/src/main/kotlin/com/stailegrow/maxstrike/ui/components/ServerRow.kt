@@ -58,13 +58,17 @@ fun extractTitle(displayName: String): String {
     return stripped.ifEmpty { displayName }
 }
 
-/** Маленькая уголковая пилюля-лейбл — протокол/транспорт/security теги. */
+/** Маленькая уголковая пилюля-лейбл — протокол/транспорт/security теги.
+ *  color — переопределение акцентного цвета (по умолчанию — акцент темы):
+ *  нужно для предупреждающих чипов вроде "INSECURE", которым не подходит
+ *  обычный акцентный цвет темы. */
 @Composable
-fun Chip(text: String, filled: Boolean = false, modifier: Modifier = Modifier) {
+fun Chip(text: String, filled: Boolean = false, color: Color? = null, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
-    val background = if (filled) palette.accent.copy(alpha = 0.16f) else Color.Transparent
-    val border = if (filled) palette.accent else palette.cardBorder
-    val textColor = if (filled) palette.accent else palette.textSecondary
+    val accent = color ?: palette.accent
+    val background = if (filled) accent.copy(alpha = 0.16f) else Color.Transparent
+    val border = if (filled) accent else palette.cardBorder
+    val textColor = if (filled) accent else palette.textSecondary
 
     Box(
         modifier = modifier
@@ -252,6 +256,13 @@ fun ServerRow(
                 Chip(text = config.transport.rawValue)
                 if (config.security != Security.NONE) {
                     Chip(text = config.security.rawValue)
+                }
+                // allowInsecure=1 в ссылке узла отключает проверку TLS-сертификата
+                // сервера на стороне Xray — само подключение ломать нельзя (часть
+                // самописных узлов сознательно использует self-signed сертификаты),
+                // но пользователь должен видеть, что здесь МОЖЕТ быть MITM-риск.
+                if (config.allowInsecure) {
+                    Chip(text = L.t("небезопасно", "insecure"), filled = true, color = palette.bad)
                 }
             }
         }

@@ -2,6 +2,7 @@ package com.stailegrow.maxstrike.core
 
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 
 /**
@@ -45,6 +46,15 @@ object SubscriptionFetcher {
         if (scheme != "http" && scheme != "https") {
             throw FetchException(L.t("Это не похоже на ссылку подписки.", "This does not look like a subscription link."))
         }
+        // Ссылка на подписку приходит от пользователя (вставлена руками или
+        // из QR-кода — а его мог сделать кто угодно). Без этой проверки
+        // приложение послушно сходило бы HTTP-запросом на локальный роутер,
+        // 169.254.x.x или другой адрес в собственной сети телефона (SSRF) —
+        // резолвим хост и отбрасываем сразу все приватные/loopback/link-local
+        // адреса, а не только литеральные IP в самой ссылке (иначе домен
+        // вида "attacker.example" с A-записью на 192.168.1.1 прошёл бы мимо
+        // проверки).
+        rejectPrivateHost(url.host)
 
         var lastFailure: FetchException? = null
         for (agent in userAgents) {
@@ -59,6 +69,32 @@ object SubscriptionFetcher {
             }
         }
         throw lastFailure ?: FetchException(L.t("Не удалось загрузить подписку.", "Could not load the subscription."))
+    }
+
+    /** Резолвит хост и отбрасывает адреса из приватных/loopback/link-local
+     *  диапазонов (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+     *  169.254.0.0/16, ::1, fc00::/7, fe80::/10 и т.п. — ровно то же, что
+     *  XrayConfigBuilder.privateRanges относит к локальной сети). Если хост
+     *  не резолвится вовсе — это отдельная сетевая ошибка, пусть с ней
+     *  разбирается сам load() ниже, тут её не перехватываем. */
+    private fun rejectPrivateHost(host: String) {
+        val addresses = try {
+            InetAddress.getAllByName(host)
+        } catch (e: Exception) {
+            return
+        }
+        for (address in addresses) {
+            if (address.isLoopbackAddress || address.isLinkLocalAddress ||
+                address.isSiteLocalAddress || address.isAnyLocalAddress
+            ) {
+                throw FetchException(
+                    L.t(
+                        "Ссылки на локальную сеть не поддерживаются.",
+                        "Links to the local network are not supported.",
+                    ),
+                )
+            }
+        }
     }
 
     private fun load(url: URL, userAgent: String, timeoutMs: Int): Payload {

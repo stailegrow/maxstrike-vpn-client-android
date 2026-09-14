@@ -64,18 +64,21 @@ object RoutingChecker {
         return Result(ip, country, domesticSite, domesticReachable, domesticLatencyMs)
     }
 
-    // ip-api.com отдаёт геолокацию по IP без ключа, но только по HTTP —
-    // это не приватные данные (просто страна нашего же VPN-выхода), так
-    // что открытый запрос тут не страшен.
+    // ip-api.com отдаёт геолокацию по IP без ключа, но бесплатный тариф —
+    // только по HTTP. С targetSdk 28+ Android по умолчанию блокирует
+    // cleartext-трафик (NetworkSecurityConfig), так что этот запрос молча
+    // падал каждый раз (ловится ниже в catch) — страна в проверке маршрута
+    // была пустой всегда, а не только при реальном сбое сети. ipwho.is —
+    // тот же принцип (гео по IP без ключа), но по HTTPS.
     private fun countryFor(ip: String): String? = try {
-        val connection = URL("http://ip-api.com/json/$ip?fields=status,country").openConnection() as HttpURLConnection
+        val connection = URL("https://ipwho.is/$ip?fields=success,country").openConnection() as HttpURLConnection
         connection.connectTimeout = 4000
         connection.readTimeout = 4000
         connection.setRequestProperty("User-Agent", USER_AGENT)
         val text = connection.inputStream.bufferedReader().use { it.readText() }
         connection.disconnect()
         val json = JSONObject(text)
-        if (json.optString("status") == "success") json.optString("country").takeIf { it.isNotBlank() } else null
+        if (json.optBoolean("success", false)) json.optString("country").takeIf { it.isNotBlank() } else null
     } catch (e: Exception) {
         null
     }

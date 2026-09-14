@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -298,11 +299,18 @@ object ServerStore {
         persist()
     }
 
+    // pingAll() пингует до 4 серверов параллельно (async{}.awaitAll()) —
+    // update{} читает и пишет атомарно одной операцией, а не как раньше
+    // (читаем .value, считаем новую карту, потом присваиваем отдельным
+    // шагом), так что запись одного сервера не может потеряться, если
+    // что-то ещё в это же время меняет тот же StateFlow.
     private fun record(id: String, value: Int?) {
-        _pings.value = _pings.value + (id to value)
+        _pings.update { it + (id to value) }
         if (value == null) return
-        val history = ((_pingHistory.value[id] ?: emptyList()) + value).takeLast(HISTORY_LENGTH)
-        _pingHistory.value = _pingHistory.value + (id to history)
+        _pingHistory.update { current ->
+            val history = ((current[id] ?: emptyList()) + value).takeLast(HISTORY_LENGTH)
+            current + (id to history)
+        }
     }
 
     // MARK: - Диск
