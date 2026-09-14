@@ -1,22 +1,29 @@
-# Max Strike (Android)
+# Max Strike
 
-Android-клиент VPN на движке [Xray-core](https://github.com/XTLS/Xray-core)
-(VLESS, Reality, XTLS Vision, транспорт XHTTP) — младший брат
+**VPN для Android, который не просит ничего лишнего.** Ни root, ни
+аккаунта, ни доверия на слово — просто ссылка на подписку и туннель на
+движке [Xray-core](https://github.com/XTLS/Xray-core) (VLESS, Reality,
+XTLS Vision, транспорт XHTTP). Младший брат
 [macOS-версии Max Strike](https://github.com/stailegrow/maxstrike-vpn-client-macos).
 
-[English](#english) · [Сборка из исходников](#сборка-из-исходников)
+[English](#english) · [Скачать последний релиз](../../releases/latest) ·
+[Сборка из исходников](#сборка-из-исходников)
 
 ---
 
 ## Что это
 
-Max Strike — приложение для Android, которое поднимает VLESS-подключение
-через ядро Xray-core в системном `VpnService`, без root и без
-привилегированного хелпера. Рассчитано на работу с подпиской: ссылка
-добавляется один раз, дальше список узлов живёт сам — добавленные на
-панели появляются в клиенте, удалённые исчезают.
+Открыл, вставил ссылку подписки, нажал подключиться — вот и всё, что от
+вас нужно. Дальше Max Strike сам следит за списком серверов (что
+добавили на панели провайдера — появится в приложении, что убрали —
+пропадёт), сам меряет, какой узел сейчас быстрее, и сам решает, какие
+сайты идут через туннель, а какие — мимо (если вы это настроили).
 
-Приложение распространяется APK-файлом напрямую, без Google Play.
+Никакой телеметрии, никакой регистрации, никакого root — само
+приложение не знает о вас ничего, что не хранится у вас же на телефоне.
+Исходники открыты целиком, можно проверить каждую строчку самостоятельно
+или собрать APK своими руками. Устанавливается напрямую, файлом — без
+Google Play.
 
 ## Возможности
 
@@ -110,16 +117,21 @@ MIT — см. [LICENSE](LICENSE).
 
 ## English
 
-**Max Strike** is an Android VPN client built on
-[Xray-core](https://github.com/XTLS/Xray-core) — the Android sibling of the
-[macOS Max Strike client](https://github.com/stailegrow/maxstrike-vpn-client-macos).
-It speaks VLESS over TCP with Reality and XTLS Vision, and the XHTTP
-transport, tunnelling through Android's built-in `VpnService` — no root, no
-privileged helper.
+**A VPN for Android that doesn't ask for anything extra.** No root, no
+account, no need to take anyone's word for it — just a subscription link
+and a tunnel built on [Xray-core](https://github.com/XTLS/Xray-core)
+(VLESS, Reality, XTLS Vision, the XHTTP transport). The Android sibling of
+the [macOS Max Strike client](https://github.com/stailegrow/maxstrike-vpn-client-macos).
 
-It is built around subscriptions: add the link once, and the node list keeps
-itself current. The app is distributed as a plain APK, not through Google
-Play.
+Open it, paste your subscription link, tap connect — that's the whole
+setup. From there Max Strike keeps its own server list in sync with your
+subscription, measures which node is fastest right now, and — if you've
+set it up that way — decides which sites go through the tunnel and which
+don't.
+
+No telemetry, no sign-up, no root. The source is fully open, so you can
+check every line yourself or build the APK by hand. Distributed as a
+plain APK file, not through Google Play.
 
 **Highlights**
 
