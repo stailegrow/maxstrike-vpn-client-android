@@ -136,8 +136,53 @@ object XrayConfigBuilder {
         "169.254.0.0/16", "100.64.0.0/10", "::1/128", "fc00::/7", "fe80::/10",
     )
 
+    // Достаёт голый host из DoH-адреса вида "https://77.88.8.8/dns-query"
+    // для routing()-правила выше — null для пустой строки или мусора,
+    // который не парсится как URI (тогда просто не добавляем правило,
+    // вместо падения).
+    private fun dohRoutingHost(url: String): String? {
+        if (url.isEmpty()) return null
+        return try {
+            java.net.URI(url).host
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun isLiteralIP(host: String): Boolean =
+        Regex("^\\d{1,3}(\\.\\d{1,3}){3}$").matches(host) || host.contains(":")
+
     fun routing(config: RoutingConfig): JSONObject {
         val rules = JSONArray()
+
+        // config.domesticDNS (например Yandex DoH 77.88.8.8 в пресете
+        // "Обход РФ") используется ниже, в dns(), только чтобы резолвить
+        // домены, которые сами идут в "direct" (config.directSites). Но
+        // без явного правила маршрутизации сетевое соединение самого
+        // Xray-core к этому DoH-серверу — это обычный dial, который без
+        // совпавшего правила уходит через outbound по умолчанию, то есть
+        // "proxy" (первый в списке outbounds), через настоящий удалённый
+        // VPN-сервер. Если этот сервер физически за границей, маршрут
+        // оттуда до российского IP часто деградирован или фильтруется —
+        // DoH-запрос к 77.88.8.8 виснет/рвётся, а dns() ниже намеренно
+        // ставит skipFallback=true для этого сервера (см. комментарий
+        // там), так что отката на remoteDNS не происходит — резолв
+        // российских доменов не срабатывает вовсе, хотя остальной
+        // трафик через proxy работает нормально (воспроизводит symptom
+        // "некоторые сайты не грузятся, хотя VPN подключён и остальное
+        // работает"). Раз весь смысл пресета "Обход РФ" — вести
+        // российские сайты мимо VPN, тот же принцип логично применить и
+        // к запросу самого домашнего DNS-сервера: он тоже должен идти
+        // "direct", а не через прокси.
+        dohRoutingHost(config.domesticDNS)?.let { host ->
+            val rule = JSONObject().put("type", "field").put("outboundTag", "direct")
+            if (isLiteralIP(host)) {
+                rule.put("ip", JSONArray(listOf(host)))
+            } else {
+                rule.put("domain", JSONArray(listOf(host)))
+            }
+            rules.put(rule)
+        }
 
         if (config.bypassLAN) {
             rules.put(
