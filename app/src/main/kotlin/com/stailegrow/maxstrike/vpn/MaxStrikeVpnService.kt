@@ -62,6 +62,9 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         // DoH-адресом вида "https://…/dns-query", годным для Xray, но не
         // для VpnService.Builder.addDnsServer(), которому нужен голый IP).
         private const val FALLBACK_DNS_IP = "1.1.1.1"
+        // Второй резервный сервер — на случай если сам remoteDNS уже указывает
+        // на 1.1.1.1 (тогда его нет смысла дублировать вторым слотом).
+        private const val SECONDARY_FALLBACK_DNS_IP = "8.8.8.8"
     }
 
     // limitedParallelism(1): CONNECT и DISCONNECT (и onRevoke) кладутся сюда
@@ -120,7 +123,25 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
             // == false, tunInterface == null) — тогда это просто no-op.
             teardown()
 
-            val dnsIP = plainIPv4(routing.remoteDNS) ?: FALLBACK_DNS_IP
+            // Системный DNS-сервер для VPN-интерфейса (тот, который видят
+            // ВСЕ приложения на телефоне, не только сам Xray) — их обычные
+            // DNS-запросы (UDP:53) идут как любой другой пакет через TUN и
+            // маршрутизируются Xray-core как обычный трафик: для него нет
+            // отдельного правила, так что по умолчанию он тоже туннелируется
+            // через outbound "proxy" — то есть реально долетает до сервера
+            // (Netherlands/Finland/...) и обратно. Если только ОДИН такой
+            // сервер задан и путь до него временно барахлит (типичная история
+            // для транзита конкретных UDP-пакетов через конкретный впс), у
+            // системного резолвера нет к кому обратиться ещё — избирательный
+            // обрыв резолва части сайтов ровно с таким поведением, что и
+            // описал пользователь: то есть сайты, то нет, помогает
+            // переподключение (свежая сессия), не помогает смена пресета
+            // маршрутизации (оба используют один и тот же единственный
+            // системный DNS-сервер). Задаём второй сервер как резерв — Android
+            // сам умеет перебирать несколько DNS-серверов интерфейса при сбое
+            // одного, addDnsServer() можно вызывать несколько раз.
+            val primaryDnsIP = dnsServerHost(routing.remoteDNS) ?: FALLBACK_DNS_IP
+            val secondaryDnsIP = FALLBACK_DNS_IP.takeIf { it != primaryDnsIP } ?: SECONDARY_FALLBACK_DNS_IP
 
             val builder = Builder()
                 .setSession("Max Strike")
@@ -128,7 +149,8 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
                 .addRoute("0.0.0.0", 0)
                 .addAddress(TUN_ADDRESS_V6, TUN_PREFIX_V6)
                 .addRoute("::", 0)
-                .addDnsServer(dnsIP)
+                .addDnsServer(primaryDnsIP)
+                .addDnsServer(secondaryDnsIP)
                 .setMtu(TUN_MTU)
 
             // Раздельное туннелирование: приложения из списка исключений не
@@ -156,7 +178,7 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
             tunInterface = iface
 
             XrayCoreBridge.registerDialerController(this)
-            XrayCoreBridge.setDNS(this, "$dnsIP:53")
+            XrayCoreBridge.setDNS(this, "$primaryDnsIP:53")
 
             // GeoAssets.init() зовёт MainActivity при старте приложения —
             // сервис живёт в том же процессе, поэтому dirPath() тут уже
@@ -232,9 +254,24 @@ class MaxStrikeVpnService : VpnService(), libXray.DialerController {
         super.onRevoke()
     }
 
-    private fun plainIPv4(value: String): String? {
-        val ipv4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
-        return value.takeIf { ipv4.matches(it) }
+    private val ipv4Pattern = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+
+    private fun plainIPv4(value: String): String? = value.takeIf { ipv4Pattern.matches(it) }
+
+    // routing.remoteDNS обычно приходит как DoH-адрес вида
+    // "https://8.8.8.8/dns-query" — plainIPv4() на него не срабатывает (это
+    // не голый IP), а VpnService.Builder.addDnsServer() голый IP как раз и
+    // просит. Вынимаем host из URL и, если это литеральный IPv4, используем
+    // его — тогда системный DNS реально совпадает с тем, что настроено в
+    // пресете маршрутизации, а не всегда падает на FALLBACK_DNS_IP.
+    private fun dnsServerHost(value: String): String? {
+        plainIPv4(value)?.let { return it }
+        val host = try {
+            java.net.URI(value).host
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        return plainIPv4(host)
     }
 
     private fun buildNotification(server: ProxyConfig, connecting: Boolean): Notification {
