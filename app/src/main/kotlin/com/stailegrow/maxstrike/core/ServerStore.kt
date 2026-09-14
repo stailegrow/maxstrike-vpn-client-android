@@ -271,7 +271,13 @@ object ServerStore {
 
     // MARK: - Пинги
 
-    suspend fun pingAll() {
+    // light=true — режим для фонового автоопроса (см. ServersScreen: раз в
+    // 10 секунд, пока открыта вкладка): 1 подключение на сервер вместо 4
+    // (1 прогрев + 3 замера) у ручного "⟳". На списке из десятка-другого
+    // серверов это разница между постоянным фоновым расходом батареи и
+    // почти незаметным. Ручной замер (light=false, по умолчанию) точность
+    // не теряет.
+    suspend fun pingAll(light: Boolean = false) {
         if (_isPinging.value || _servers.value.isEmpty()) return
         _isPinging.value = true
         try {
@@ -281,7 +287,14 @@ object ServerStore {
                 while (index < servers.size) {
                     val slice = servers.subList(index, minOf(index + 4, servers.size))
                     val measured = slice.map { server ->
-                        async { server.id to PingTester.latency(server.address, server.port) }
+                        async {
+                            val value = if (light) {
+                                PingTester.latency(server.address, server.port, samples = 1, warmup = false)
+                            } else {
+                                PingTester.latency(server.address, server.port)
+                            }
+                            server.id to value
+                        }
                     }.awaitAll()
                     for ((id, value) in measured) record(id, value)
                     index += 4

@@ -23,9 +23,15 @@ object PingTester {
      * делаем несколько попыток и берём медиану — минимум слишком
      * чувствителен к единственному ложному (заниженному) замеру.
      */
-    suspend fun latency(host: String, port: Int, samples: Int = 3, timeoutMs: Int = 4000): Int? =
+    suspend fun latency(
+        host: String,
+        port: Int,
+        samples: Int = 3,
+        timeoutMs: Int = 4000,
+        warmup: Boolean = true,
+    ): Int? =
         withContext(Dispatchers.IO) {
-            attempt(host, port, timeoutMs) // прогрев, результат выбрасываем
+            if (warmup) attempt(host, port, timeoutMs) // прогрев, результат выбрасываем
 
             val values = mutableListOf<Int>()
             val total = maxOf(1, samples)

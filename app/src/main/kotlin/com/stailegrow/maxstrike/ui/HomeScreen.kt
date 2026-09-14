@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +64,7 @@ fun HomeScreen(onToggle: (ProxyConfig) -> Unit, modifier: Modifier = Modifier) {
 
     val isActiveState = state is ConnectionState.Connected || state is ConnectionState.Connecting
     val slabServer = if (isActiveState) activeServer else servers.firstOrNull { it.id == selectedID }
-    val manual = servers.filter { it.subscriptionID == null }
+    val manual = remember(servers) { servers.filter { it.subscriptionID == null } }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -88,7 +89,9 @@ fun HomeScreen(onToggle: (ProxyConfig) -> Unit, modifier: Modifier = Modifier) {
         }
 
         items(subscriptions, key = { it.id }) { subscription ->
-            val nodes = servers.filter { it.subscriptionID == subscription.id }
+            val nodes = remember(servers, subscription.id) {
+                servers.filter { it.subscriptionID == subscription.id }
+            }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SubscriptionCard(
                     subscription = subscription,

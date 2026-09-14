@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -42,21 +43,23 @@ fun ServersScreen(modifier: Modifier = Modifier) {
     val activeServer by ConnectionManager.activeServer.collectAsState()
     val connectionState by ConnectionManager.state.collectAsState()
 
-    val manual = servers.filter { it.subscriptionID == null }
+    val manual = remember(servers) { servers.filter { it.subscriptionID == null } }
     val isActiveState = connectionState is ConnectionState.Connected || connectionState is ConnectionState.Connecting
 
-    // Опрос раз в 5 секунд, пока открыта именно эта вкладка — Android-аналог
+    // Опрос раз в 10 секунд (light=true — по одному TCP-подключению на
+    // сервер вместо 4, ради батареи), пока открыта именно эта вкладка —
+    // Android-аналог
     // ServerStore.startAutoPing()/stopAutoPing() на маке (там дёргается из
     // ServersTab.onAppear/onDisappear). Тут отдельный стоп не нужен:
     // LaunchedEffect сам отменяется, когда ServersScreen уходит из
     // композиции (ушли на другую вкладку) — то же самое onDisappear, только
     // возможностями Compose. Раньше история пинга (LatencyCard, подпись
-    // "опрос каждые 5 с") обновлялась только по ручному нажатию "⟳" —
+    // "опрос каждые 10 с") обновлялась только по ручному нажатию "⟳" —
     // подпись обещала автообновление, которого не было.
     LaunchedEffect(Unit) {
         while (true) {
-            delay(5_000)
-            ServerStore.pingAll()
+            delay(10_000)
+            ServerStore.pingAll(light = true)
         }
     }
 
@@ -66,7 +69,9 @@ fun ServersScreen(modifier: Modifier = Modifier) {
         contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
     ) {
         items(subscriptions, key = { it.id }) { subscription ->
-            val nodes = servers.filter { it.subscriptionID == subscription.id }
+            val nodes = remember(servers, subscription.id) {
+                servers.filter { it.subscriptionID == subscription.id }
+            }
             androidx.compose.foundation.layout.Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {

@@ -38,7 +38,7 @@ fun LatencyCard(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = L.t("опрос каждые 5 с", "polled every 5 s"),
+                text = L.t("опрос каждые 10 с", "polled every 10 s"),
                 style = HudType.body(10.sp),
                 color = palette.textSecondary,
             )
