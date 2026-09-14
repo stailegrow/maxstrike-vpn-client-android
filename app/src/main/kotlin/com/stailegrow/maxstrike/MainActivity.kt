@@ -2,6 +2,7 @@ package com.stailegrow.maxstrike
 
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -112,13 +113,29 @@ class MainActivity : ComponentActivity() {
         SettingsStore.init(applicationContext)
 
         // На 120-герцовых экранах (например, Samsung S25) окно по умолчанию
-        // не всегда просит максимальную частоту обновления у системы — явно
-        // заявляем её, иначе часть анимаций (живой фон, ConnectSlab)
-        // визуально упирается в 60 Гц даже когда сам экран умеет больше.
-        // preferredRefreshRate — поле WindowManager.LayoutParams, доступно
-        // с API 21, так что дополнительная проверка версии не нужна.
-        window.attributes = window.attributes.apply {
-            preferredRefreshRate = Float.MAX_VALUE
+        // не всегда просит максимальную частоту обновления у системы. Раньше
+        // здесь стояло preferredRefreshRate = Float.MAX_VALUE — но это поле
+        // WindowManager.LayoutParams устарело ещё в API 23 (см. официальный
+        // reference на developer.android.com), заменено на
+        // preferredDisplayModeId, и система вполне могла молча его
+        // игнорировать — отсюда и потолок в 60 Гц, который пользователь
+        // увидел на оверлее частоты кадров, а не проблема в анимациях самого
+        // приложения. minSdk = 24 (выше API 23), так что
+        // preferredDisplayModeId используем без проверки версии; а вот сам
+        // Display получаем по-разному: свойство display доступно с API 30,
+        // для более старых версий — устаревший, но рабочий
+        // windowManager.defaultDisplay.
+        val activityDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay
+        }
+        val highestRefreshMode = activityDisplay?.supportedModes?.maxByOrNull { it.refreshRate }
+        if (highestRefreshMode != null) {
+            window.attributes = window.attributes.apply {
+                preferredDisplayModeId = highestRefreshMode.modeId
+            }
         }
 
         enableEdgeToEdge()
