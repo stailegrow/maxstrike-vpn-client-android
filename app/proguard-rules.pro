@@ -37,3 +37,18 @@
 # AGP для компонентов, но держим явное правило, чтобы это не зависело от
 # версии AGP/дефолтных правил.
 -keep class com.stailegrow.maxstrike.vpn.MaxStrikeVpnService { *; }
+
+
+# --- Защита от декомпиляции ---------------------------------------------------
+# Все необфусцируемые классы переносятся в корневой пакет с короткими именами,
+# разрешено менять модификаторы доступа ради более агрессивной оптимизации,
+# имена исходных файлов в стектрейсах заменяются на "SourceFile".
+-repackageclasses ''
+-allowaccessmodification
+-renamesourcefileattribute SourceFile
+
+# Отладочные логи вырезаются из релизной сборки целиком.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}

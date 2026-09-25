@@ -107,11 +107,13 @@ keyPassword=...
 
 ## Лицензия
 
-MIT — см. [LICENSE](LICENSE).
+Проприетарная лицензия, все права защищены — см. [LICENSE](LICENSE).
+Код открыт **только для чтения**: копирование, изменение, сборка,
+распространение, декомпиляция и копирование дизайна запрещены. Условия для
+пользователей приложения — в [EULA.md](EULA.md).
 
-Ядро [Xray-core](https://github.com/XTLS/Xray-core) поставляется отдельным
-образом (gomobile-обёртка `libXray`) и распространяется под собственной
-лицензией (MPL-2.0).
+Сторонние компоненты распространяются под собственными лицензиями (список —
+в конце файла [LICENSE](LICENSE)).
 
 ---
 
@@ -170,5 +172,4 @@ unsigned.
 subscription refresh, routing databases, an external-IP probe, and the
 latency/speed measurements themselves.
 
-**Licence** — MIT. Xray-core ships as a separate gomobile build (`libXray`)
-under its own licence (MPL-2.0).
+**Licence** — proprietary, all rights reserved (source-available, read-only). See [LICENSE](LICENSE) and [EULA.md](EULA.md); third-party components keep their own licences.
